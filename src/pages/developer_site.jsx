@@ -205,7 +205,33 @@ export default function DeveloperSite() {
   const [editableContent, setEditableContent] = useState(() => {
     // Try to get saved content from localStorage on initial load
     const savedContent = localStorage.getItem('editableContent');
-    return savedContent ? JSON.parse(savedContent) : { ...userData };
+    if (savedContent) {
+      return JSON.parse(savedContent);
+    } else {
+      // Initialize with userData and add any missing properties needed by EditableText components
+      const initialContent = { ...userData };
+      
+      // Add properties that are used in EditableText but not in userData
+      initialContent.siteName = "Think-";
+      initialContent.siteNameAccent = "Tech";
+      initialContent.hero = {
+        line1: "Innovate.",
+        line2: "Create.",
+        line3: "Transform.",
+        description: "Pushing the boundaries of what's possible through cutting-edge development and innovative solutions.",
+        button1: "View Projects",
+        button2: "Contact Me"
+      };
+      initialContent.featured = {
+        title: "Featured Projects"
+      };
+      initialContent.footer = {
+        brand: "Think-Tech",
+        tagline: " Innovating for tomorrow."
+      };
+      
+      return initialContent;
+    }
   });
   
   const { scrollYProgress } = useScroll();
@@ -243,55 +269,130 @@ export default function DeveloperSite() {
   const handleTextEdit = (path, value) => {
     if (!editMode) return;
     
-    const newContent = { ...editableContent };
+    // Create a deep copy of the current state
+    const newContent = JSON.parse(JSON.stringify(editableContent));
     
-    // Handle nested paths like "profile.name"
-    if (path.includes('.')) {
-      const parts = path.split('.');
-      let current = newContent;
+    // Handle paths like "profile.name" or "projects.featuredProjects[0].name"
+    const pathParts = path.split('.');
+    let current = newContent;
+    
+    // Navigate to and create the path if needed
+    for (let i = 0; i < pathParts.length - 1; i++) {
+      const part = pathParts[i];
       
-      // Navigate to the deepest object
-      for (let i = 0; i < parts.length - 1; i++) {
-        if (parts[i].includes('[') && parts[i].includes(']')) {
-          // Handle array indexing like "projects.featuredProjects[0]"
-          const arrName = parts[i].split('[')[0];
-          const arrIndex = parseInt(parts[i].split('[')[1].split(']')[0]);
-          current = current[arrName][arrIndex];
-        } else {
-          current = current[parts[i]];
-        }
-      }
-      
-      // Set value on deepest property
-      const lastPart = parts[parts.length - 1];
-      if (lastPart.includes('[') && lastPart.includes(']')) {
-        const arrName = lastPart.split('[')[0];
-        const arrIndex = parseInt(lastPart.split('[')[1].split(']')[0]);
-        current[arrName][arrIndex] = value;
+      // Handle array access like "featuredProjects[0]"
+      if (part.includes('[')) {
+        const name = part.substring(0, part.indexOf('['));
+        const index = parseInt(part.substring(part.indexOf('[') + 1, part.indexOf(']')));
+        
+        if (!current[name]) current[name] = [];
+        if (!current[name][index]) current[name][index] = {};
+        
+        current = current[name][index];
       } else {
-        current[lastPart] = value;
+        // Handle regular object property
+        if (!current[part]) current[part] = {};
+        current = current[part];
       }
-    } else {
-      newContent[path] = value;
     }
     
-    // Update state and localStorage will automatically be updated via useEffect
+    // Set the value at the final path part
+    const lastPart = pathParts[pathParts.length - 1];
+    
+    // Handle array access in the last part too
+    if (lastPart.includes('[')) {
+      const name = lastPart.substring(0, lastPart.indexOf('['));
+      const index = parseInt(lastPart.substring(lastPart.indexOf('[') + 1, lastPart.indexOf(']')));
+      
+      if (!current[name]) current[name] = [];
+      current[name][index] = value;
+    } else {
+      current[lastPart] = value;
+    }
+    
+    // Update the state which will trigger localStorage save via useEffect
     setEditableContent(newContent);
+    
+    // Log for debugging
+    console.log(`Updated ${path} to:`, value);
   };
 
   // Reset to default content
   const handleResetContent = () => {
     if (window.confirm('Are you sure you want to reset all content to default?')) {
       localStorage.removeItem('editableContent');
-      setEditableContent({ ...userData });
+      
+      // Initialize with userData and add any missing properties needed by EditableText components
+      const initialContent = { ...userData };
+      
+      // Add properties that are used in EditableText but not in userData
+      initialContent.siteName = "Think-";
+      initialContent.siteNameAccent = "Tech";
+      initialContent.hero = {
+        line1: "Innovate.",
+        line2: "Create.",
+        line3: "Transform.",
+        description: "Pushing the boundaries of what's possible through cutting-edge development and innovative solutions.",
+        button1: "View Projects",
+        button2: "Contact Me"
+      };
+      initialContent.featured = {
+        title: "Featured Projects"
+      };
+      initialContent.footer = {
+        brand: "Think-Tech",
+        tagline: " Innovating for tomorrow."
+      };
+      
+      setEditableContent(initialContent);
     }
   };
 
   // Editable text component
   const EditableText = ({ path, content, className }) => {
     const [isEditing, setIsEditing] = useState(false);
-    const [text, setText] = useState(content);
+    const [localText, setLocalText] = useState('');
     const inputRef = useRef(null);
+    
+    // Get the actual value from editableContent using the path
+    const getValue = () => {
+      if (!path.includes('.')) {
+        return editableContent[path] || content;
+      }
+      
+      const parts = path.split('.');
+      let current = editableContent;
+      
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i].includes('[') && parts[i].includes(']')) {
+          const arrName = parts[i].split('[')[0];
+          const arrIndex = parseInt(parts[i].split('[')[1].split(']')[0]);
+          
+          if (!current[arrName] || !current[arrName][arrIndex]) {
+            return content; // Return default if path doesn't exist
+          }
+          
+          current = current[arrName][arrIndex];
+        } else {
+          if (!current[parts[i]]) {
+            return content; // Return default if path doesn't exist
+          }
+          current = current[parts[i]];
+        }
+      }
+      
+      return current;
+    };
+    
+    // Get the current value to display
+    const displayValue = getValue();
+    
+    // Initialize local text state when editing starts
+    useEffect(() => {
+      if (isEditing) {
+        setLocalText(displayValue);
+      }
+    }, [isEditing, displayValue]);
     
     useEffect(() => {
       if (isEditing && inputRef.current) {
@@ -307,13 +408,13 @@ export default function DeveloperSite() {
     
     const handleBlur = () => {
       setIsEditing(false);
-      handleTextEdit(path, text);
+      handleTextEdit(path, localText);
     };
     
     const handleKeyDown = (e) => {
       if (e.key === 'Enter') {
         setIsEditing(false);
-        handleTextEdit(path, text);
+        handleTextEdit(path, localText);
       }
     };
     
@@ -321,8 +422,8 @@ export default function DeveloperSite() {
       return (
         <input
           ref={inputRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
+          value={localText}
+          onChange={(e) => setLocalText(e.target.value)}
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           className={`bg-transparent outline-none border-b border-indigo-500 ${className}`}
@@ -335,7 +436,7 @@ export default function DeveloperSite() {
         className={`${className} ${editMode ? 'cursor-text hover:bg-slate-700/30' : ''}`}
         onDoubleClick={handleDoubleClick}
       >
-        {content}
+        {displayValue}
       </span>
     );
   };
@@ -461,15 +562,20 @@ export default function DeveloperSite() {
           >
             {editMode ? <FaCheck size={22} /> : <FaEdit size={22} />}
           </motion.div>
-          <motion.div
-            whileHover={{ scale: 1.2 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={handleResetContent}
-            className="text-red-500 hover:text-red-400 cursor-pointer"
-            title="Reset to default content"
-          >
-            <FaTimes size={22} />
-          </motion.div>
+          {editMode && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0 }}
+              whileHover={{ scale: 1.2 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={handleResetContent}
+              className="text-red-500 hover:text-red-400 cursor-pointer"
+              title="Reset to default content"
+            >
+              <FaTimes size={22} />
+            </motion.div>
+          )}
           <motion.div
             whileHover={{ scale: 1.2 }}
             whileTap={{ scale: 0.9 }}
@@ -1450,15 +1556,22 @@ export default function DeveloperSite() {
             Double-click text to edit
           </motion.div>
         )}
-        <motion.button
-          whileHover={{ scale: 1.1, rotate: 5 }}
-          whileTap={{ scale: 0.9 }}
-          onClick={handleResetContent}
-          className="bg-red-500 text-white h-14 w-14 rounded-full flex items-center justify-center shadow-lg absolute bottom-40 right-0"
-          title="Reset to default content"
-        >
-          <FaTimes size={24} />
-        </motion.button>
+        <AnimatePresence>
+          {editMode && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0 }}
+              whileHover={{ scale: 1.1, rotate: 5 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={handleResetContent}
+              className="bg-red-500 text-white h-14 w-14 rounded-full flex items-center justify-center shadow-lg absolute bottom-40 right-0"
+              title="Reset to default content"
+            >
+              <FaTimes size={24} />
+            </motion.button>
+          )}
+        </AnimatePresence>
         <motion.button
           whileHover={{ scale: 1.1, rotate: 5 }}
           whileTap={{ scale: 0.9 }}
